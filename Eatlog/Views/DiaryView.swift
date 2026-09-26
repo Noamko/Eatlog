@@ -100,15 +100,11 @@ private struct DayMealsView: View {
             Section {
                 NutritionTotalsCard(
                     total: dayTotal,
+                    goal: tileGoal,
                     onSelect: { selectedNutrient = $0 }
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
-                ForEach(Nutrient.allCases.filter { settings.goals[$0]?.period == .daily }) { nutrient in
-                    if let goal = settings.goals[nutrient] {
-                        dailyGoalRow(nutrient, goal: goal)
-                    }
-                }
             }
             Section {
                 if meals.isEmpty {
@@ -145,33 +141,25 @@ private struct DayMealsView: View {
         meals.reduce(0) { $0 + nutrient.value(of: $1) }
     }
 
-    private func dailyGoalRow(_ nutrient: Nutrient, goal: NutrientGoal) -> some View {
+    /// Daily-goal state for a tile, with tile-sized status text ("72 over", "met").
+    private func tileGoal(_ nutrient: Nutrient) -> StatTile.GoalInfo? {
+        guard let goal = settings.goals[nutrient], goal.period == .daily else { return nil }
         let value = dayTotal(nutrient)
         let status = goal.status(value: value, unit: nutrient.unit)
-        let warning = status.state == .over && nutrient.warnsWhenExceeded
-        let tint: Color = switch status.state {
-        case .over: .red
-        case .met: .green
-        case .onTrack: nutrient.color
+        let diff = Int(goal.amount.rounded() - value.rounded())
+        let text: String
+        switch goal.direction {
+        case .atMost:
+            text = diff >= 0 ? "\(diff) left" : "\(-diff) over"
+        case .atLeast:
+            text = diff > 0 ? "\(diff) to go" : "met"
         }
-        return HStack(spacing: 10) {
-            Text(nutrient.title)
-                .font(.caption)
-                .foregroundStyle(warning ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                .frame(width: 58, alignment: .leading)
-            ProgressView(value: goal.progress(value: value))
-                .tint(tint)
-            if warning {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-            }
-            Text(status.text)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(status.state == .onTrack ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
-                .monospacedDigit()
-        }
-        .listRowBackground(warning ? Color.red.opacity(0.09) : nil)
+        return StatTile.GoalInfo(
+            fraction: goal.progress(value: value),
+            state: status.state,
+            text: text,
+            warning: status.state == .over && nutrient.warnsWhenExceeded
+        )
     }
 
     /// Simulator/testing hook: `-open-nutrient <name>` opens that nutrient's breakdown.
@@ -188,9 +176,11 @@ private struct DayMealsView: View {
 
 private struct NutritionTotalsCard: View {
     let total: (Nutrient) -> Double
+    let goal: (Nutrient) -> StatTile.GoalInfo?
     let onSelect: (Nutrient) -> Void
 
     var body: some View {
+        let anyGoal = Nutrient.allCases.contains { goal($0) != nil }
         HStack(spacing: 10) {
             ForEach(Nutrient.allCases) { nutrient in
                 Button {
@@ -200,7 +190,9 @@ private struct NutritionTotalsCard: View {
                         value: total(nutrient),
                         unit: nutrient.unit,
                         label: nutrient.title,
-                        color: nutrient.color
+                        color: nutrient.color,
+                        goal: goal(nutrient),
+                        reservesGoalSpace: anyGoal
                     )
                 }
                 .buttonStyle(.plain)
@@ -210,11 +202,34 @@ private struct NutritionTotalsCard: View {
 }
 
 struct StatTile: View {
+    /// Daily-goal state rendered inside the tile: a slim bar plus "42 left"-style status.
+    struct GoalInfo {
+        let fraction: Double
+        let state: NutrientGoal.State
+        let text: String
+        let warning: Bool
+    }
+
     let value: Double
     let unit: String
     let label: String
     let color: Color
     var isSelected: Bool = false
+    var goal: GoalInfo? = nil
+    var reservesGoalSpace: Bool = false
+
+    private var valueColor: Color {
+        if goal?.warning == true { return .red }
+        return isSelected ? color : .primary
+    }
+
+    private var goalTint: Color {
+        switch goal?.state {
+        case .over: return .red
+        case .met: return .green
+        default: return color
+        }
+    }
 
     var body: some View {
         VStack(spacing: 3) {
@@ -222,7 +237,7 @@ struct StatTile: View {
                 Text("\(Int(value.rounded()))")
                     .font(.title3.weight(.bold))
                     .monospacedDigit()
-                    .foregroundStyle(isSelected ? color : Color.primary)
+                    .foregroundStyle(valueColor)
                 Text(unit)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -230,6 +245,23 @@ struct StatTile: View {
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            if let goal {
+                VStack(spacing: 2) {
+                    ProgressView(value: goal.fraction)
+                        .tint(goalTint)
+                        .scaleEffect(y: 0.8)
+                    Text(goal.text)
+                        .font(.caption2.weight(goal.warning ? .semibold : .regular))
+                        .foregroundStyle(goal.state == .onTrack ? AnyShapeStyle(.secondary) : AnyShapeStyle(goalTint))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 2)
+            } else if reservesGoalSpace {
+                Color.clear.frame(height: 22)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)

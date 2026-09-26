@@ -213,15 +213,20 @@ struct PeriodOverviewView: View {
         Set(loggedDays.compactMap { calendar.dateInterval(of: .weekOfYear, for: $0)?.start }).count
     }
 
-    /// What a goal is measured against in the current period view, with a label.
-    private func goalValue(_ goal: NutrientGoal, nutrient: Nutrient) -> (value: Double, context: String) {
+    /// A goal measured over the shown period: daily goals accumulate to a
+    /// period budget (7× for a week, days-in-month× for a month) against the
+    /// period's total; weekly goals in month view fall back to avg/week.
+    private func goalValue(_ goal: NutrientGoal, nutrient: Nutrient) -> (value: Double, target: Double, context: String) {
         switch (goal.period, period) {
         case (.weekly, .week):
-            return (total(of: nutrient), "this week")
+            return (total(of: nutrient), goal.amount, "this week")
         case (.weekly, .month):
-            return (total(of: nutrient) / Double(max(1, weeksLogged)), "avg/week")
-        case (.daily, _):
-            return (dailyAverage(nutrient), "avg/day")
+            return (total(of: nutrient) / Double(max(1, weeksLogged)), goal.amount, "avg/week")
+        case (.daily, .week):
+            return (total(of: nutrient), goal.amount * 7, "this week")
+        case (.daily, .month):
+            let days = calendar.range(of: .day, in: .month, for: anchor)?.count ?? 30
+            return (total(of: nutrient), goal.amount * Double(days), "this month")
         }
     }
 
@@ -257,7 +262,9 @@ struct PeriodOverviewView: View {
 
     private func goalRow(_ nutrient: Nutrient, goal: NutrientGoal) -> some View {
         let measured = goalValue(goal, nutrient: nutrient)
-        let status = goal.status(value: measured.value, unit: nutrient.unit)
+        var scaledGoal = goal
+        scaledGoal.amount = measured.target
+        let status = scaledGoal.status(value: measured.value, unit: nutrient.unit)
         let warning = status.state == .over && nutrient.warnsWhenExceeded
         let tint: Color = switch status.state {
         case .over: .red
@@ -282,9 +289,9 @@ struct PeriodOverviewView: View {
                     .foregroundStyle(status.state == .onTrack ? AnyShapeStyle(.primary) : AnyShapeStyle(tint))
                     .monospacedDigit()
             }
-            ProgressView(value: goal.progress(value: measured.value))
+            ProgressView(value: scaledGoal.progress(value: measured.value))
                 .tint(tint)
-            Text("\(Int(measured.value.rounded())) of \(Int(goal.amount.rounded())) \(nutrient.unit) · \(measured.context)")
+            Text("\(Int(measured.value.rounded())) of \(Int(measured.target.rounded())) \(nutrient.unit) · \(measured.context)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
