@@ -29,6 +29,7 @@ struct RootView: View {
         .environment(photoPopout)
         .task {
             seedSampleMealIfRequested()
+            seedGoalsIfRequested()
             runTestAnalysisIfRequested()
             runExportImportTestsIfRequested()
         }
@@ -66,6 +67,19 @@ struct RootView: View {
                 encoding: .utf8
             )
         }
+        #endif
+    }
+
+    /// Simulator/testing hook: `-seed-goals` sets a demo mix of goals.
+    private func seedGoalsIfRequested() {
+        #if DEBUG
+        guard LaunchHooks.consume("-seed-goals") else { return }
+        settings.goals = [
+            .calories: NutrientGoal(direction: .atMost, amount: 700, period: .daily),
+            .protein: NutrientGoal(direction: .atLeast, amount: 120, period: .daily),
+            .carbs: NutrientGoal(direction: .atMost, amount: 250, period: .weekly),
+            .fat: NutrientGoal(direction: .atMost, amount: 25, period: .daily),
+        ]
         #endif
     }
 

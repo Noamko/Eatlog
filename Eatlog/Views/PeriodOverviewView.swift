@@ -16,7 +16,9 @@ struct PeriodOverviewView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppSettings.self) private var settings
 
+    @State private var showingGoalsEditor = false
     @State private var period: Period = .week
     @State private var anchor: Date = .now
     @State private var meals: [Meal] = []
@@ -79,7 +81,10 @@ struct PeriodOverviewView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                 }
+                // Goals stay visible even for an empty period — that's exactly
+                // when you set them.
                 if meals.isEmpty {
+                    goalsSection
                     ContentUnavailableView(
                         "Nothing logged",
                         systemImage: "chart.bar",
@@ -87,6 +92,7 @@ struct PeriodOverviewView: View {
                     )
                 } else {
                     averagesSection
+                    goalsSection
                     chartSection
                     contributorsSection
                 }
@@ -109,8 +115,12 @@ struct PeriodOverviewView: View {
             .task(id: reloadKey) {
                 #if DEBUG
                 if LaunchHooks.consume("-overview-month") { period = .month }
+                if LaunchHooks.consume("-open-goals") { showingGoalsEditor = true }
                 #endif
                 reload()
+            }
+            .sheet(isPresented: $showingGoalsEditor) {
+                GoalsEditorView()
             }
         }
         // Local popout mount so photos opened from a meal report inside this
@@ -193,6 +203,94 @@ struct PeriodOverviewView: View {
         } footer: {
             Text("Averaged over \(loggedDays.count) logged day\(loggedDays.count == 1 ? "" : "s") · \(meals.count) meal\(meals.count == 1 ? "" : "s"). Tap a tile to switch the chart and breakdown.")
         }
+    }
+
+    private func total(of nutrient: Nutrient) -> Double {
+        meals.reduce(0) { $0 + nutrient.value(of: $1) }
+    }
+
+    private var weeksLogged: Int {
+        Set(loggedDays.compactMap { calendar.dateInterval(of: .weekOfYear, for: $0)?.start }).count
+    }
+
+    /// What a goal is measured against in the current period view, with a label.
+    private func goalValue(_ goal: NutrientGoal, nutrient: Nutrient) -> (value: Double, context: String) {
+        switch (goal.period, period) {
+        case (.weekly, .week):
+            return (total(of: nutrient), "this week")
+        case (.weekly, .month):
+            return (total(of: nutrient) / Double(max(1, weeksLogged)), "avg/week")
+        case (.daily, _):
+            return (dailyAverage(nutrient), "avg/day")
+        }
+    }
+
+    private var goalsSection: some View {
+        Section {
+            if settings.goals.isEmpty {
+                Button {
+                    showingGoalsEditor = true
+                } label: {
+                    Label("Set Goals", systemImage: "target")
+                }
+            } else {
+                ForEach(Nutrient.allCases.filter { settings.goals[$0] != nil }) { nutrient in
+                    goalRow(nutrient, goal: settings.goals[nutrient] ?? .suggested(for: nutrient))
+                }
+            }
+        } header: {
+            HStack {
+                Text("Goals")
+                Spacer()
+                if !settings.goals.isEmpty {
+                    Button("Edit") { showingGoalsEditor = true }
+                        .font(.footnote)
+                        .textCase(nil)
+                }
+            }
+        } footer: {
+            if settings.goals.isEmpty {
+                Text("e.g. at least 120 g protein daily, or at most 2,000 kcal.")
+            }
+        }
+    }
+
+    private func goalRow(_ nutrient: Nutrient, goal: NutrientGoal) -> some View {
+        let measured = goalValue(goal, nutrient: nutrient)
+        let status = goal.status(value: measured.value, unit: nutrient.unit)
+        let warning = status.state == .over && nutrient.warnsWhenExceeded
+        let tint: Color = switch status.state {
+        case .over: .red
+        case .met: .green
+        case .onTrack: nutrient.color
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(nutrient.title)
+                    .font(.subheadline.weight(.medium))
+                Text(goal.summary(unit: nutrient.unit))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if warning {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                Text(status.text)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(status.state == .onTrack ? AnyShapeStyle(.primary) : AnyShapeStyle(tint))
+                    .monospacedDigit()
+            }
+            ProgressView(value: goal.progress(value: measured.value))
+                .tint(tint)
+            Text("\(Int(measured.value.rounded())) of \(Int(goal.amount.rounded())) \(nutrient.unit) · \(measured.context)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .padding(.vertical, 2)
+        .listRowBackground(warning ? Color.red.opacity(0.09) : nil)
     }
 
     private var chartSection: some View {

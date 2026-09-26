@@ -53,6 +53,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
 final class AppSettings {
     private static let providerKey = "ai-provider"
     private static let webSearchKey = "openai-web-search"
+    private static let goalsKey = "nutrient-goals"
 
     var provider: AIProvider {
         didSet { UserDefaults.standard.set(provider.rawValue, forKey: Self.providerKey) }
@@ -60,6 +61,14 @@ final class AppSettings {
 
     var useWebSearch: Bool {
         didSet { UserDefaults.standard.set(useWebSearch, forKey: Self.webSearchKey) }
+    }
+
+    var goals: [Nutrient: NutrientGoal] {
+        didSet {
+            if let data = try? JSONEncoder().encode(goals) {
+                UserDefaults.standard.set(data, forKey: Self.goalsKey)
+            }
+        }
     }
 
     // Per-provider state, so switching providers never loses keys or model choices.
@@ -117,6 +126,12 @@ final class AppSettings {
     init() {
         provider = AIProvider(rawValue: UserDefaults.standard.string(forKey: Self.providerKey) ?? "") ?? .openAI
         useWebSearch = UserDefaults.standard.object(forKey: Self.webSearchKey) as? Bool ?? true
+        if let data = UserDefaults.standard.data(forKey: Self.goalsKey),
+           let stored = try? JSONDecoder().decode([Nutrient: NutrientGoal].self, from: data) {
+            goals = stored
+        } else {
+            goals = [:]
+        }
         var keys: [AIProvider: String] = [:]
         var models: [AIProvider: String] = [:]
         var modelLists: [AIProvider: [String]] = [:]

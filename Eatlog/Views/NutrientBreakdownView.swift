@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-enum Nutrient: String, CaseIterable, Identifiable {
+enum Nutrient: String, CaseIterable, Identifiable, Codable {
     case calories, protein, carbs, fat
 
     var id: String { rawValue }
@@ -17,6 +17,10 @@ enum Nutrient: String, CaseIterable, Identifiable {
     }
 
     var unit: String { self == .calories ? "kcal" : "g" }
+
+    /// Exceeding a cap on these reads as a warning; protein is the one nutrient
+    /// where more than planned isn't treated as bad.
+    var warnsWhenExceeded: Bool { self != .protein }
 
     var color: Color {
         switch self {

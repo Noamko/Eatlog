@@ -80,6 +80,7 @@ struct DiaryView: View {
 
 private struct DayMealsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppSettings.self) private var settings
     @Query private var meals: [Meal]
     private let day: Date
     @State private var selectedNutrient: Nutrient?
@@ -103,6 +104,11 @@ private struct DayMealsView: View {
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+                ForEach(Nutrient.allCases.filter { settings.goals[$0]?.period == .daily }) { nutrient in
+                    if let goal = settings.goals[nutrient] {
+                        dailyGoalRow(nutrient, goal: goal)
+                    }
+                }
             }
             Section {
                 if meals.isEmpty {
@@ -137,6 +143,35 @@ private struct DayMealsView: View {
 
     private func dayTotal(_ nutrient: Nutrient) -> Double {
         meals.reduce(0) { $0 + nutrient.value(of: $1) }
+    }
+
+    private func dailyGoalRow(_ nutrient: Nutrient, goal: NutrientGoal) -> some View {
+        let value = dayTotal(nutrient)
+        let status = goal.status(value: value, unit: nutrient.unit)
+        let warning = status.state == .over && nutrient.warnsWhenExceeded
+        let tint: Color = switch status.state {
+        case .over: .red
+        case .met: .green
+        case .onTrack: nutrient.color
+        }
+        return HStack(spacing: 10) {
+            Text(nutrient.title)
+                .font(.caption)
+                .foregroundStyle(warning ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .frame(width: 58, alignment: .leading)
+            ProgressView(value: goal.progress(value: value))
+                .tint(tint)
+            if warning {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
+            Text(status.text)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(status.state == .onTrack ? AnyShapeStyle(.secondary) : AnyShapeStyle(tint))
+                .monospacedDigit()
+        }
+        .listRowBackground(warning ? Color.red.opacity(0.09) : nil)
     }
 
     /// Simulator/testing hook: `-open-nutrient <name>` opens that nutrient's breakdown.
