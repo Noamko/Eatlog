@@ -53,6 +53,12 @@ struct MealDetailView: View {
                 }
             }
             Section("Description") {
+                DatePicker(
+                    "When",
+                    selection: $meal.createdAt,
+                    in: ...Date.now,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
                 TextField("Title", text: $meal.title)
                 TextEditor(text: $meal.details)
                     .frame(minHeight: 90)

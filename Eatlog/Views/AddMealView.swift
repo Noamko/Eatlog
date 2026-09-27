@@ -6,6 +6,19 @@ import UIKit
 struct AddMealView: View {
     let day: Date
 
+    init(day: Date) {
+        self.day = day
+        let initial: Date
+        if Calendar.current.isDateInToday(day) {
+            initial = .now
+        } else {
+            initial = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
+        }
+        _mealTime = State(initialValue: min(initial, .now))
+    }
+
+    @State private var mealTime: Date
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(AppSettings.self) private var settings
@@ -151,6 +164,12 @@ struct AddMealView: View {
 
     private var descriptionSection: some View {
         Section("Description") {
+            DatePicker(
+                "When",
+                selection: $mealTime,
+                in: ...Date.now,
+                displayedComponents: [.date, .hourAndMinute]
+            )
             TextField("Title (e.g. Chicken salad)", text: $title)
             ZStack(alignment: .topLeading) {
                 if details.isEmpty {
@@ -257,14 +276,8 @@ struct AddMealView: View {
     }
 
     private func save() {
-        let createdAt: Date
-        if Calendar.current.isDateInToday(day) {
-            createdAt = .now
-        } else {
-            createdAt = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: day) ?? day
-        }
         let meal = Meal(
-            createdAt: createdAt,
+            createdAt: mealTime,
             title: title.trimmed.isEmpty ? "Meal" : title.trimmed,
             details: details.trimmed,
             calories: calories,

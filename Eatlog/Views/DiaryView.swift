@@ -48,6 +48,7 @@ struct DiaryView: View {
                 }
                 .task { await openDetailIfRequested() }
                 .task { await openOverviewIfRequested() }
+                .task { await openAddMealIfRequested() }
         }
     }
 
@@ -61,6 +62,15 @@ struct DiaryView: View {
         guard LaunchHooks.consume("-open-overview") else { return }
         try? await Task.sleep(for: .milliseconds(900))
         showingOverview = true
+        #endif
+    }
+
+    /// Simulator/testing hook: `-open-add-meal` launch argument opens the add-meal sheet.
+    private func openAddMealIfRequested() async {
+        #if DEBUG
+        guard LaunchHooks.consume("-open-add-meal") else { return }
+        try? await Task.sleep(for: .milliseconds(900))
+        showingAddMeal = true
         #endif
     }
 
